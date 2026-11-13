@@ -20,11 +20,13 @@ python models/train_brainage.py     # OASIS nWBV model + validation
 python models/train_mri_cnn.py      # 3D CNN on 436 real OASIS MRIs (~30 min CPU; tested, then removed from the app)
 python models/build_region_norms.py # region intensity index (tested, then removed from the app)
 python models/build_tissue_norms.py # hippocampus / ventricle / brain-fraction measures + go/no-go test
+python models/build_device_features.py  # NHANES wrist-monitor features (sleep regularity, rhythm, movement)
+python models/train_device.py       # device features vs thinking speed, health-adjusted
 python models/build_facts.py        # writes models/artifacts/facts.json: every number the app quotes
 python -m neurotrail.brain_export   # fsaverage6 brain mesh for the 3D view
 python -m neurotrail.atlas_export   # deep-structure meshes + Harvard-Oxford labels
 python web/server.py                # open http://localhost:8600
-pytest -q                           # 27 tests
+pytest -q                           # 31 tests
 ```
 
 Python does all the work (pandas, scikit-learn, statsmodels, nilearn, nibabel, PyTorch, FastAPI).
@@ -47,11 +49,16 @@ served locally from `web/static/vendor/`. No Node, no build step, no CDN at runt
    - Your first 3 habits.
    - **Save with a passkey** (WebAuthn / FIDO2): fingerprint, face or device PIN. No password.
 
+Or tap **Try it with sample data** on the welcome screen: a sample account with 60 days of
+**synthetic** watch data and game plays, clearly labelled in the app, so the watch features can be
+seen without wearing a watch for weeks. Its Sprint scores are practice curve plus noise and do not
+depend on sleep, so the app's personal comparison correctly shows "no clear difference yet".
+
 Then four tabs:
 
 | Tab | What's there |
 |---|---|
-| **Today** | One next step, today's 3 habits, care rings (Move / Mind / Body, filled by evidence-weighted points), a kind streak (one rest day a week never breaks it), "Try a change" what-if, tip of the day |
+| **Today** | **Your week, your brain** (below), one next step, today's 3 habits, care rings (Move / Mind / Body, filled by evidence-weighted points), a kind streak (one rest day a week never breaks it), "Try a change" what-if, tip of the day |
 | **Checks** | Speed Sprint (race your ghost), Word Recall, Animal Naming, Voice check; more: Trail Connect, Color Clash, Memory Grid, Reflex. Compared only with your own first tries; "learning your baseline" until 3 plays |
 | **My Brain** | **Learn**: 7 diseases grouped by what you can do (lower your risk / live better / early help matters): where each one strikes on a 3D brain, a stage slider, how it varies, what to do at home, when to call a doctor, BE-FAST, myth-or-fact cards. **Mine**: a skills map colored from your checks, plus an MRI research preview |
 | **Me** | Progress charts, connect a device (Apple Health / CSV), edit answers, passkey security, **How we know**, support lines |
@@ -64,10 +71,42 @@ Accessibility: 18 px body text (nothing under 16 px), 48 px tap targets, solid h
 A / A+ / A++ text size, Calm mode and `prefers-reduced-motion` (no animation), keyboard focus rings,
 skip link, single-column phone layout with a bottom tab bar. The 3D brain spins for 5 s, then holds still.
 
+## Your week, your brain (phone and watch data)
+
+Import an Apple Health export (or a CSV with date, steps, sleep_hours, optional bedtime/waketime).
+Today's walking and sleep habits tick themselves. Then one screen answers "how are my activities
+affecting my brain?" in three honest layers:
+
+1. **What 2,534 older Americans show.** NHANES 2011–2014 adults 60+ wore a wrist accelerometer for a
+   week and took the Digit Symbol test. `models/train_device.py`: survey-weighted, Holm-corrected, then
+   re-checked after adjusting for health problems (diabetes, stroke, heart disease, depression, BMI,
+   smoking, blood pressure, BP medication), because poor health lowers both activity and test scores.
+2. **Where you sit.** The same code (`neurotrail/rhythm.py`) runs on NHANES and on your watch's hourly data.
+3. **Your own proof, from the game.** Your Speed Sprint after 7–9 h nights vs other nights, with a
+   bootstrap range, "still learning" until 3 plays in each group, and your first 3 plays skipped (practice effect).
+
+| Wrist-monitor measure (top vs bottom quarter) | Points (95% CI) | After health problems | In the app? |
+|---|---|---|---|
+| Sleep regularity (hourly SRI) | +2.6 (+1.7 to +3.5), Holm p = 4e-8 | +1.5 (+0.5 to +2.4) | Yes, with personal estimate |
+| Daily movement (MIMS) | +2.5 (+1.2 to +3.7) | +1.5 (+0.3 to +2.8) | Yes, as step targets (units differ) |
+| Sleep length near 8 h | +1.5 (+0.6 to +2.4) | +1.0 (+0.1 to +1.9) | Yes, as 7–9 h target |
+| Steady daily rhythm (IS) | +1.7 (+0.9 to +2.6) | +0.8 (−0.0 to +1.6) | No: not clear after health |
+| Broken-up rhythm (IV) | +1.5 (+0.6 to +2.5) | +0.7 (−0.3 to +1.7) | No |
+| Sleep timing | +0.4 (−0.4 to +1.2) | −0.1 | No |
+| Resting heart rate (exam pulse) | +0.4 (−0.4 to +1.1) | +0.3 | No clear link; shown as heart fitness only |
+
+Together they add 0.7 percentage points of cross-validated R² beyond age and background: worth building
+as habits, not a way to predict anyone's score. Personal "points" are shown only for sleep regularity,
+because it's built the same way on both devices. Walking speed and heart-rate variability from the watch
+are shown as your own 4-week trend with published evidence (Tian et al., JAMA Netw Open 2020; Forte et
+al., Front Neurosci 2019). A printable **doctor visit summary** collects BP log, mood score, watch
+trends, game trend and what's still unknown.
+
 ## Data (all real, all public)
 
 | Dataset | Used for | n |
 |---|---|---|
+| CDC NHANES 2011–2014 wrist monitors (PAXHD, PAXDAY, PAXHR) | Hourly movement and sleep-wear flags for 7 days | 2,534 adults 60+ with ≥4 valid days |
 | CDC NHANES 2011–2014 | Digit Symbol test (thinking speed) + blood pressure, diabetes, smoking, activity, sleep, PHQ-9, hearing | 3,014 adults 60+ with the test; 2,597 complete cases |
 | OASIS-1 tables (Kaggle `jboysen/mri-and-alzheimers`) | nWBV brain volume, dementia rating (CDR) | 416 people aged 18–96 + 20 repeat scans |
 | OASIS-1 MRI volumes (Kaggle `ninadaithal/oasis-1-shinohara`) | Sample scans, tested MRI measures | 436 volumes |

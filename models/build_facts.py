@@ -13,6 +13,18 @@ import pandas as pd
 ART = Path(__file__).resolve().parents[1] / "models" / "artifacts"
 
 
+def _device() -> dict:
+    """NHANES 2011-2014 wrist-monitor findings (models/train_device.py)."""
+    d = json.loads((ART / "device_associations.json").read_text())
+    rows = []
+    for k, f in d["features"].items():
+        a, h = f["alone"], f["health_adjusted"]
+        rows.append({"id": k, "label": f["label"], "points": a["points"], "ci": a["ci"], "p_holm": a["p_holm"],
+                     "health_points": h["points"], "health_ci": h["ci"], "health_p": h["p"],
+                     "shown": bool(a["p_holm"] < .05 and h["p"] < .05)})
+    return {"n": d["n_device"], "cv": d["cv"], "features": rows}
+
+
 def main() -> None:
     cog = json.loads((ART / "cognition_metrics.json").read_text())
     assoc = json.loads((ART / "cognition_associations.json").read_text())["main"]
@@ -61,6 +73,7 @@ def main() -> None:
         ],
         "measured_alzheimers_map_note": "Earlier region map partly reflected fluid next to brain folds, not tissue loss; kept only as an exploratory note.",
         "db_tables": 11,
+        "device": _device(),
     }
     (ART / "facts.json").write_text(json.dumps(facts, indent=1))
     print(json.dumps({"bands": bands, "old_flag_pct": old_flag, "teaching": tis["nwbv_teaching"]}, indent=1))

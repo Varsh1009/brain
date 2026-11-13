@@ -159,5 +159,136 @@
   }
  ],
  "measured_alzheimers_map_note": "Earlier region map partly reflected fluid next to brain folds, not tissue loss; kept only as an exploratory note.",
- "db_tables": 11
+ "db_tables": 11,
+ "device": {
+  "n": 2534,
+  "cv": {
+   "r2_demographics": 0.4095770504085686,
+   "r2_with_device": 0.41645065677959153,
+   "gain_mean": 0.006873606371022944,
+   "gain_min": 0.004746781517320553,
+   "n": 2274
+  },
+  "features": [
+   {
+    "id": "mims_day",
+    "label": "Daily movement (wrist monitor)",
+    "points": 2.454547747311528,
+    "ci": [
+     1.2452936683893592,
+     3.663801826233697
+    ],
+    "p_holm": 0.00041638662476591064,
+    "health_points": 1.5449375528731968,
+    "health_ci": [
+     0.2995742650449427,
+     2.7903008407014513
+    ],
+    "health_p": 0.015039077294160279,
+    "shown": true
+   },
+   {
+    "id": "sri",
+    "label": "Sleep regularity (same sleep hours each day)",
+    "points": 2.602520026165271,
+    "ci": [
+     1.7241377074941686,
+     3.4809023448363736
+    ],
+    "p_holm": 4.4497476211532235e-08,
+    "health_points": 1.4549413310391555,
+    "health_ci": [
+     0.5201342658842534,
+     2.3897483961940575
+    ],
+    "health_p": 0.0022845770478216515,
+    "shown": true
+   },
+   {
+    "id": "is",
+    "label": "Steady daily rhythm (same pattern each day)",
+    "points": 1.7348243022314536,
+    "ci": [
+     0.8649246846712285,
+     2.6047239197916787
+    ],
+    "p_holm": 0.0004639340875097148,
+    "health_points": 0.8048415550881022,
+    "health_ci": [
+     -0.04048231632336068,
+     1.6501654264995649
+    ],
+    "health_p": 0.06202711374207114,
+    "shown": false
+   },
+   {
+    "id": "iv",
+    "label": "Broken-up rhythm (rest and activity switching)",
+    "points": 1.5407990801145133,
+    "ci": [
+     0.6014415832745427,
+     2.480156576954484
+    ],
+    "p_holm": 0.003915130509376728,
+    "health_points": 0.7175624645552462,
+    "health_ci": [
+     -0.24521152110669936,
+     1.6803364502171916
+    ],
+    "health_p": 0.14407707950689175,
+    "shown": false
+   },
+   {
+    "id": "sleep_dev",
+    "label": "Sleep length away from 8 h",
+    "points": 1.5305075615812336,
+    "ci": [
+     0.6245921779352979,
+     2.4364229452271693
+    ],
+    "p_holm": 0.003714806255953547,
+    "health_points": 1.0208820632074698,
+    "health_ci": [
+     0.11977068209920222,
+     1.9219934443157372
+    ],
+    "health_p": 0.026386783016653367,
+    "shown": true
+   },
+   {
+    "id": "mid_dev",
+    "label": "Sleep timing away from about 3 AM midpoint",
+    "points": 0.4233169147068701,
+    "ci": [
+     -0.3611915355214481,
+     1.2078253649351882
+    ],
+    "p_holm": 0.580487580262671,
+    "health_points": -0.08533069400595417,
+    "health_ci": [
+     -0.8600159162005492,
+     0.6893545281886408
+    ],
+    "health_p": 0.8290752083511128,
+    "shown": false
+   },
+   {
+    "id": "rhr",
+    "label": "Resting heart rate",
+    "points": 0.3480008715749727,
+    "ci": [
+     -0.424844017214848,
+     1.1208457603647934
+    ],
+    "p_holm": 0.580487580262671,
+    "health_points": 0.26238697502213193,
+    "health_ci": [
+     -0.46240628426803854,
+     0.9871802343123024
+    ],
+    "health_p": 0.4779901127594687,
+    "shown": false
+   }
+  ]
+ }
 }

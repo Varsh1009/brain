@@ -20,6 +20,10 @@ from datetime import datetime, timedelta
 from xml.etree.ElementTree import iterparse
 
 FIELDS = ("steps", "sleep_hours", "resting_hr", "hrv_ms", "walking_speed")
+# Hourly series kept per day for the rhythm features (neurotrail/rhythm.py):
+#   steps_h  : 24 hourly step counts (from the same source chosen for the daily total)
+#   asleep_h : 24 values, 1 = asleep for >= 30 min of that clock hour, 0 = awake, None = unknown
+HOURLY = ("steps_h", "asleep_h")
 ASLEEP = {"HKCategoryValueSleepAnalysisAsleep", "HKCategoryValueSleepAnalysisAsleepCore",
           "HKCategoryValueSleepAnalysisAsleepDeep", "HKCategoryValueSleepAnalysisAsleepREM",
           "HKCategoryValueSleepAnalysisAsleepUnspecified"}
@@ -31,6 +35,8 @@ def _dt(s: str) -> datetime:
 
 def parse_apple(xml_stream) -> dict[str, dict]:
     steps = defaultdict(lambda: defaultdict(float))       # day -> source -> steps
+    steps_h = defaultdict(lambda: defaultdict(lambda: [0.0] * 24))   # day -> source -> hourly
+    intervals = defaultdict(list)                         # source -> [(start, end)] asleep
     sleep = defaultdict(lambda: defaultdict(float))       # night (end date) -> source -> hours
     avg = {k: defaultdict(list) for k in ("resting_hr", "hrv_ms", "walking_speed")}
     typemap = {"HKQuantityTypeIdentifierRestingHeartRate": "resting_hr",
@@ -43,10 +49,13 @@ def parse_apple(xml_stream) -> dict[str, dict]:
         t, a = el.get("type"), el.attrib
         try:
             if t == "HKQuantityTypeIdentifierStepCount":
-                steps[a["startDate"][:10]][a.get("sourceName", "?")] += float(a["value"])
+                v, src = float(a["value"]), a.get("sourceName", "?")
+                steps[a["startDate"][:10]][src] += v
+                steps_h[a["startDate"][:10]][src][int(a["startDate"][11:13])] += v
             elif t == "HKCategoryTypeIdentifierSleepAnalysis" and a.get("value") in ASLEEP:
                 s, e = _dt(a["startDate"]), _dt(a["endDate"])
                 sleep[e.date().isoformat()][a.get("sourceName", "?")] += (e - s).total_seconds() / 3600
+                intervals[a.get("sourceName", "?")].append((s, e))
             elif t in typemap:
                 v = float(a["value"])
                 if t.endswith("WalkingSpeed") and a.get("unit") == "km/hr":
@@ -57,7 +66,13 @@ def parse_apple(xml_stream) -> dict[str, dict]:
         el.clear()
     days: dict[str, dict] = defaultdict(dict)
     for d, src in steps.items():
-        days[d]["steps"] = round(max(src.values()))
+        best = max(src, key=src.get)
+        days[d]["steps"] = round(src[best])
+        days[d]["steps_h"] = [round(x) for x in steps_h[d][best]]
+    if intervals:
+        best = max(intervals, key=lambda k: sum((e - s).total_seconds() for s, e in intervals[k]))
+        for d, hours in asleep_hours(intervals[best]).items():
+            days.setdefault(d, {})["asleep_h"] = hours
     for d, src in sleep.items():
         h = max(src.values())
         if 0.5 <= h <= 16:
@@ -68,12 +83,40 @@ def parse_apple(xml_stream) -> dict[str, dict]:
     return dict(days)
 
 
+def asleep_hours(spans: list[tuple[datetime, datetime]]) -> dict[str, list]:
+    """Asleep intervals -> per-day 24-hour states. A clock hour with >= 30 min asleep is 1.
+    Days between the first and last tracked night count as tracked (awake = 0); outside
+    that range nothing is known."""
+    if not spans:
+        return {}
+    mins = defaultdict(float)                     # (day, hour) -> asleep minutes
+    for s, e in spans:
+        t = s
+        while t < e:
+            nxt = min(e, (t.replace(minute=0, second=0) + timedelta(hours=1)))
+            mins[(t.date().isoformat(), t.hour)] += (nxt - t).total_seconds() / 60
+            t = nxt
+    first = min(s for s, _ in spans).date()
+    last = max(e for _, e in spans).date()
+    out, d = {}, first
+    while d <= last:
+        k = d.isoformat()
+        out[k] = [1 if mins.get((k, h), 0) >= 30 else 0 for h in range(24)]
+        d += timedelta(days=1)
+    return out
+
+
+def _hm(day: str, hm: str) -> datetime:
+    return datetime.strptime(f"{day} {hm.strip()[:5]}", "%Y-%m-%d %H:%M")
+
+
 def parse_csv(text: str) -> dict[str, dict]:
     rows = csv.DictReader(io.StringIO(text))
     cols = {c.lower().strip(): c for c in (rows.fieldnames or [])}
     if "date" not in cols:
-        raise ValueError("CSV needs a 'date' column (YYYY-MM-DD) plus steps / sleep_hours / resting_hr / hrv_ms / walking_speed.")
-    days = {}
+        raise ValueError("CSV needs a 'date' column (YYYY-MM-DD) plus steps / sleep_hours / resting_hr / hrv_ms / walking_speed "
+                         "(optional: bedtime and waketime as HH:MM, for sleep regularity).")
+    days, spans = {}, []
     for r in rows:
         d = (r[cols["date"]] or "").strip()[:10]
         try:
@@ -87,8 +130,32 @@ def parse_csv(text: str) -> dict[str, dict]:
                     rec[f] = float(r[cols[f]])
                 except ValueError:
                     pass
+        hs = (r.get(cols.get("hourly_steps", ""), "") or "").strip()
+        if hs:
+            try:
+                vals = [float(x) for x in hs.split(";")]
+                if len(vals) == 24:
+                    rec["steps_h"] = vals
+                    rec.setdefault("steps", round(sum(vals)))
+            except ValueError:
+                pass
+        bt, wt = (r.get(cols.get("bedtime", ""), "") or "").strip(), (r.get(cols.get("waketime", ""), "") or "").strip()
+        if bt and wt:
+            # the row's date is the morning you woke up; bedtime after noon belongs to the evening before
+            try:
+                wake = _hm(d, wt)
+                bed = _hm(d, bt)
+                if bed >= wake:
+                    bed -= timedelta(days=1)
+                if timedelta(hours=1) <= wake - bed <= timedelta(hours=16):
+                    spans.append((bed, wake))
+                    rec.setdefault("sleep_hours", round((wake - bed).total_seconds() / 3600, 2))
+            except ValueError:
+                pass
         if rec:
             days[d] = rec
+    for d, hours in asleep_hours(spans).items():
+        days.setdefault(d, {})["asleep_h"] = hours
     return days
 
 

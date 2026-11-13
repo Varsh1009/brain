@@ -119,8 +119,8 @@ function planFor(me) {
 const habitDone = id => id === 'mood' ? ME.profile.phq9 != null : ME.trail?.[id] === 'done';
 
 // ------------------------------------------------------------------ ROUTER
-const routes = { today: pageToday, habit: pageHabit, checks: pageChecks, check: pageCheck, sprint: () => pageCheck('speed'), brain: pageBrain, me: pageMe };
-const TAB = { habit: 'today', check: 'checks', sprint: 'checks' };
+const routes = { week: pageWeek, doctor: pageDoctor, today: pageToday, habit: pageHabit, checks: pageChecks, check: pageCheck, sprint: () => pageCheck('speed'), brain: pageBrain, me: pageMe };
+const TAB = { habit: 'today', check: 'checks', sprint: 'checks', week: 'today', doctor: 'me' };
 let brainView = null;
 async function route() {
   STOP_SPRINT();
@@ -145,7 +145,7 @@ function pageWelcome() {
     <h1>What actually helps <em>your</em> brain?</h1>
     <p class="lead">Two minutes, a few taps, and you'll see which of your habits matter most, backed by real health data from thousands of people. Then build those habits with small daily steps.</p>
     <button class="btn big" id="start">Start · no sign-up needed</button>
-    <div style="margin-top:12px"><button class="btn alt big" id="login">🔑 I already have a passkey</button></div>
+    <div style="margin-top:12px" class="row center"><button class="btn alt big" id="sample">👀 Try it with sample data</button><button class="btn alt big" id="login">🔑 I already have a passkey</button></div>
     <div class="promise">
       <div><b>📊 Real data</b>CDC survey of 2,597 adults 60+, and 436 real MRI scans.</div>
       <div><b>🙅 No hype</b>We show what we tested and what failed. No "brain age".</div>
@@ -153,6 +153,7 @@ function pageWelcome() {
     <p class="muted">A wellness and education tool, not a diagnosis. If you're worried about your memory, talk to a doctor.</p></div>`;
   $('#start').onclick = async () => { try { await api('/auth/guest', {}); AUTH = await api('/auth/me'); route(); } catch (e) { toast(`Couldn't start: ${e.message}`, 5000); } };
   $('#login').onclick = passkeyLogin;
+  $('#sample').onclick = async () => { try { await api('/auth/sample', {}); AUTH = await api('/auth/me'); location.hash = '#/week'; route(); } catch (e) { toast(`Couldn't start: ${e.message}`, 5000); } };
 }
 async function passkeyLogin() {
   try {
@@ -265,6 +266,7 @@ async function pageToday() {
     ${ME.support ? SUPPORT : ''}
     <div class="hello">${buddy(nDone === 3 ? 'wow' : 'happy', 96)}<div class="bubble"><b>${hi}!</b> ${nDone === 3 ? 'All 3 habits done today. That is how it adds up.' : nDone ? `${nDone} of 3 habits done. Nice momentum.` : 'One small step today is enough.'}
       ${ME.streak ? `<br>🔥 ${ME.streak}-day streak <span class="muted">(one rest day a week never breaks it)</span>` : ''}</div></div>
+    <a class="card weekcard" href="#/week"><div class="eyebrow">New · from your phone or watch</div><h2>🧠 Your week, your brain</h2><p>See how your sleep and movement line up with thinking speed in 2,534 older adults who wore a wrist monitor, and with your own Speed Sprint scores.</p><span class="btn">Open →</span></a>
     ${next ? `<a class="card next" href="#/habit/${next}" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">Your next step</div><h2>${HABIT[next].ico} ${HABIT[next].name}</h2><p>${esc(nextWhy(next))}</p><span class="btn">Start →</span></a>`
       : `<a class="card next" href="#/checks" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">All habits done</div><h2>🎯 Want a quick check?</h2><p>Play a 90-second Speed Sprint and race your first try. Or rest: rest counts too.</p><span class="btn">Go to Checks →</span></a>`}
     <div class="grid">
@@ -669,7 +671,11 @@ function howWeKnow() {
     <p>${N.complete_cases.toLocaleString()} adults 60+ with complete answers. Survey-weighted regression on the Digit Symbol test (0–133 points). Adding habits to age, sex, education and income improved prediction from R² ${N.r2_demographics.toFixed(2)} to ${N.r2_full.toFixed(2)} (cross-validated).</p>
     <div class="tablewrap"><table class="t"><tr><th>Change</th><th>Points on the test</th><th>Clear link?</th></tr>${N.contrasts.map(c => `<tr><td>${esc(c.label)}</td><td>${fmt(c.dsst_points)} (${fmt(c.dsst_ci[0])} to ${fmt(c.dsst_ci[1])})</td><td>${c.p_value < .05 ? 'Yes' : 'No'} (p=${c.p_value.toPrecision(2)})</td></tr>`).join('')}</table></div>
     <p class="muted">Fairness check: the prediction model's average error differs by group (${Object.entries(N.fairness_mean_bias).map(([g, b]) => `${esc(g)} ${fmt(b)}`).join(', ')} points), so we only use these numbers for "what if" comparisons within one person, never to rank people.</p>
-    <h3>Model 2: real MRI scans (OASIS-1, ${O.volumes} volumes)</h3>
+    ${F.device ? `<h3>Model 2: wrist monitors and thinking speed (NHANES 2011–2014)</h3>
+    <p>${F.device.n.toLocaleString()} adults 60+ wore a wrist accelerometer for a week and took the same test. Each measure: top vs bottom quarter, adjusted for age, sex, education and income, then also for health problems (to check that poor health isn't behind the link). Only measures that pass both checks get a card in "Your week, your brain".</p>
+    <div class="tablewrap"><table class="t"><tr><th>Measure (healthier end)</th><th>Points</th><th>After health problems</th><th>Shown?</th></tr>${F.device.features.map(f => `<tr><td>${esc(f.label)}</td><td>${fmt(f.points)} (${fmt(f.ci[0])} to ${fmt(f.ci[1])})</td><td>${fmt(f.health_points)} (${fmt(f.health_ci[0])} to ${fmt(f.health_ci[1])})</td><td>${f.shown ? 'Yes' : 'No: not clear'}</td></tr>`).join('')}</table></div>
+    <p class="muted">Together the device measures add only ${(F.device.cv.gain_mean * 100).toFixed(1)} percentage points of explained variation beyond age and background (cross-validated), so they're habits worth building, not a way to predict a person's score.</p>` : ''}
+    <h3>Model 3: real MRI scans (OASIS-1, ${O.volumes} volumes)</h3>
     <p>${O.people} people plus ${O.rescans} repeat scans (${esc(O.rescan_note)}). OASIS's validated brain-volume measure separates dementia from healthy scans with AUC ${F.nwbv_model.auc.toFixed(2)} (95% CI ${F.nwbv_model.auc_ci.map(x => x.toFixed(2)).join('–')}): useful for research, not for screening one person.</p>
     <h3>What we built, tested and removed</h3>
     ${F.removed.map(r => `<div class="lever"><b>❌ ${esc(r.what)}</b><span></span><span class="muted" style="grid-column:1/-1">${esc(r.why)}</span></div>`).join('')}
@@ -706,17 +712,123 @@ async function progressCharts() {
 }
 async function wearBox() {
   const W = await api('/api/me/wearables'), S = W.summary, days = Object.entries(W.days), box = $('#wbox');
-  box.innerHTML = `<p>Bring in steps and sleep from your phone or watch to <b>see</b> them here. (Watch sleep is shown, not fed into the survey model, which was built on self-reported sleep.)</p>
-    <label class="drop" id="wdrop"><input type="file" id="wfile" accept=".zip,.xml,.csv" hidden><span style="font-size:2rem" aria-hidden="true">⌚</span><b>Choose your Apple Health export.zip</b><span class="muted">or a CSV with a date column and steps / sleep_hours</span></label>
+  box.innerHTML = `<p>Bring in steps and sleep from your phone or watch. NeuroTrail ticks your walking and sleep habits for you and shows <a href="#/week">how your week lines up with your brain</a>.</p>
+    <label class="drop" id="wdrop"><input type="file" id="wfile" accept=".zip,.xml,.csv" hidden><span style="font-size:2rem" aria-hidden="true">⌚</span><b>Choose your Apple Health export.zip</b><span class="muted">or a CSV: date, steps, sleep_hours (optional bedtime, waketime as HH:MM)</span></label>
     <p class="muted">iPhone: Health app → your photo → Export All Health Data.</p><div id="wmsg" aria-live="polite"></div>
     ${S.days_with_data ? `<div class="vstats">${S.steps != null ? `<div><b>${Math.round(S.steps).toLocaleString()}</b><span>steps a day</span></div>` : ''}${S.sleep_hours != null ? `<div><b>${S.sleep_hours.toFixed(1)} h</b><span>sleep a night</span></div>` : ''}${S.resting_hr != null ? `<div><b>${Math.round(S.resting_hr)}</b><span>resting heart rate</span></div>` : ''}</div>
       <p class="muted">${S.days_with_data} days imported (${S.from} to ${S.to}).</p><div class="chartbox"><canvas id="wch"></canvas></div>` : ''}`;
   if (days.length) chart('wch', { type: 'bar', data: { labels: days.map(d => d[0].slice(5)), datasets: [{ label: 'steps', data: days.map(d => d[1].steps ?? null), backgroundColor: 'rgba(91,227,164,.75)', borderRadius: 4 }] }, options: chartOpts() });
   const up = async f => { $('#wmsg').innerHTML = '<p class="muted">Reading your file… (large exports can take a minute)</p>';
     const fd = new FormData(); fd.append('file', f);
-    try { const j = await postForm('/api/me/wearables', fd); ME = j.player; toast(`Imported ${j.imported_days} days ✓`); wearBox(); } catch (e) { $('#wmsg').innerHTML = `<p class="caveat">⚠ ${esc(e.message)}</p>`; } };
+    try { const j = await postForm('/api/me/wearables', fd); ME = j.player; toast(`Imported ${j.imported_days} days ✓${j.autofilled?.length ? ' · today\'s ' + j.autofilled.join(' & ') + ' habit ticked' : ''}`); location.hash = '#/week'; } catch (e) { $('#wmsg').innerHTML = `<p class="caveat">⚠ ${esc(e.message)}</p>`; } };
   $('#wfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
   const d = $('#wdrop'); d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over'); d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); };
+}
+
+
+// ================================================================== YOUR WEEK, YOUR BRAIN
+// Watch data -> what 2,534 NHANES wrist-monitor wearers show -> where you sit -> your own Sprint trend.
+const isSample = () => (AUTH?.name || '').startsWith('Sample');
+const SAMPLE_NOTE = `<div class="caveat" role="note">👀 <b>Sample account.</b> The watch data and game scores below are <b>synthetic</b> (made up for this demo). The findings from 2,534 real people are real.</div>`;
+function meter(value, max, marks, cls = '') {
+  const pos = v => Math.max(0, Math.min(100, v / max * 100));
+  return `<div class="meter ${cls}" aria-hidden="true"><i style="width:${pos(value)}%"></i>${marks.map(([v, l]) => `<b style="left:${pos(v)}%"><span>${l}</span></b>`).join('')}</div>`;
+}
+function findingText(f, what) {
+  const dia = FACTS?.nhanes?.contrasts?.find(c => c.column === 'diabetes');
+  return `In <b>${f.n.toLocaleString()} older Americans who wore a wrist monitor for a week</b>, ${what} scored about <b>${f.points.toFixed(1)} points higher</b> on a 133-point thinking-speed test (range ${f.ci[0].toFixed(1)} to ${f.ci[1].toFixed(1)}).
+    After accounting for health problems like diabetes, heart disease and depression it was still about <b>${f.health_points.toFixed(1)}</b> (${f.health_ci[0].toFixed(1)} to ${f.health_ci[1].toFixed(1)}).${dia ? ` For scale: diabetes in the same survey is linked to about ${Math.abs(dia.dsst_points).toFixed(1)} points.` : ''}`;
+}
+const STATUS = { good: ['ontarget', 'On target'], room: ['Medium', 'Room to grow'], unknown: ['unknown', 'Not enough data'] };
+async function pageWeek() {
+  FACTS ||= await api('/api/facts').catch(() => null);
+  const W = await api('/api/me/brainweek');
+  if (!W.has_data) {
+    main.innerHTML = `<div class="stack"><h1>🧠 Your week, your brain</h1><div class="card"><p>Bring in your phone or watch data and NeuroTrail shows how your sleep and movement line up with thinking speed, using 2,534 real people who wore a wrist monitor, and with your own Speed Sprint scores.</p>
+      <a class="btn" href="#/me/connect">⌚ Connect a device</a></div></div>`; return;
+  }
+  const [sri, mov, len] = W.items, P = W.personal, nx = W.items.find(i => i.id === W.next);
+  const nextText = { sri: ['🌙 Keep the same bedtime and wake-up time', `Your sleep regularity is ${sri.value?.toFixed(0)}. Aim for ${sri.target}+ by going to bed and waking within the same hour each day, weekends too.`, 'sleep'],
+    steps: ['👟 Add a short daily walk', `You average ${Math.round(mov.value ?? 0).toLocaleString()} steps. A 10-minute walk adds about 1,000. Next goal: ${mov.value < 3826 ? '3,826' : '9,826'} steps a day.`, 'steps'],
+    sleep_len: ['😴 Aim for 7 to 9 hours', `You average ${len.value?.toFixed(1)} hours. Move bedtime 15 minutes earlier this week.`, 'sleep'] }[W.next];
+  main.innerHTML = `<div class="stack">
+    <h1>🧠 Your week, your brain</h1>
+    <p class="lead">How your last ${W.window.days} days of watch data line up with thinking speed. Data from ${W.window.from} to ${W.window.to}.</p>
+    ${isSample() ? SAMPLE_NOTE : ''}
+    ${nx ? `<a class="card next" href="#/habit/${nextText[2]}" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">Your one next step</div><h2>${nextText[0]}</h2><p>${esc(nextText[1])}</p><span class="btn">Start →</span></a>`
+      : `<div class="card next"><div class="eyebrow">Great week</div><h2>🌟 All three on target</h2><p>Keep it steady. Steady is what counts.</p></div>`}
+    <div class="grid3">
+      <section class="card measure"><div class="eyebrow">Sleep regularity</div>
+        <div class="bignum">${sri.value != null ? sri.value.toFixed(0) : '–'}<small> / 100</small></div><span class="size ${STATUS[sri.status][0]}">${STATUS[sri.status][1]}</span>
+        ${sri.value != null ? meter(sri.value, 100, [[sri.target, 'top quarter']]) : ''}
+        <p>${sri.value != null ? `Same asleep/awake hours day to day. ${sri.percentile != null ? `Steadier than about <b>${sri.percentile}% of people your age</b> in the survey (a rough comparison: different device).` : ''}` : `Needs ${5} nights of sleep data (you have ${sri.nights}).`}</p>
+        ${sri.your_points > 0 ? `<p class="gain">Reaching the top quarter is linked to about <b>+${sri.your_points.toFixed(1)} points</b> (population estimate, not a promise).</p>` : ''}
+        <details class="drawer"><summary>What the data shows</summary><p>${findingText(sri.finding, 'people with the steadiest sleep (top quarter vs bottom quarter)')}</p>
+          <p class="muted">Lower sleep regularity was also linked to higher dementia risk in 88,000 UK Biobank adults (<a href="https://pubmed.ncbi.nlm.nih.gov/38165323/" target="_blank" rel="noopener">Yiallourou 2024</a>).</p></details></section>
+      <section class="card measure"><div class="eyebrow">Daily movement</div>
+        <div class="bignum">${mov.value != null ? Math.round(mov.value).toLocaleString() : '–'}<small> steps</small></div><span class="size ${STATUS[mov.status][0]}">${STATUS[mov.status][1]}</span>
+        ${mov.value != null ? meter(mov.value, 12000, [[3826, '3,826'], [9826, '9,826']]) : ''}
+        <p>A day, on average. In 78,000 UK Biobank adults, about 3,800 steps a day went with 25% lower dementia risk and about 9,800 with 50% lower.</p>
+        <details class="drawer"><summary>What the data shows</summary><p>${findingText(mov.finding, 'people who moved the most (top quarter vs bottom quarter of wrist-measured movement)')}</p>
+          <p class="muted">A wrist monitor measures movement in different units from a phone's step count, so we show the step targets from <a href="https://pubmed.ncbi.nlm.nih.gov/36036987/" target="_blank" rel="noopener">Del Pozo Cruz 2022</a> instead of converting.</p></details></section>
+      <section class="card measure"><div class="eyebrow">Sleep length</div>
+        <div class="bignum">${len.value != null ? len.value.toFixed(1) : '–'}<small> hours</small></div><span class="size ${STATUS[len.status][0]}">${STATUS[len.status][1]}</span>
+        ${len.value != null ? meter(len.value, 11, [[7, '7'], [9, '9']]) : ''}
+        <p>A night, on average. Too little and too much were both linked to slower thinking.</p>
+        <details class="drawer"><summary>What the data shows</summary><p>${findingText(len.finding, 'people whose sleep period was closest to 8 hours (top vs bottom quarter)')}</p></details></section>
+    </div>
+
+    <section class="card proof"><div class="eyebrow">🎮 Your game, your proof</div><h2>Your Speed Sprint after good sleep</h2>
+      ${P.status === 'ok' ? `<div class="duel"><div><b>${P.mean_good}</b><span>after 7–9 h nights<br>(${P.n_good} plays)</span></div><div><b>${P.mean_other}</b><span>after other nights<br>(${P.n_other} plays)</span></div></div>
+        <p>${P.ci[0] > 0 ? `You score about <b>${P.diff.toFixed(1)} more</b> after a good night (range ${P.ci[0]} to ${P.ci[1]}). That's your own brain, not a survey.`
+          : P.ci[1] < 0 ? `You actually score a little lower after 7–9 h nights (range ${P.ci[0]} to ${P.ci[1]}). Keep playing; one person's data is noisy.`
+          : `<b>No clear difference yet</b>: ${fmt(P.diff)} points, but the range (${fmt(P.ci[0])} to ${fmt(P.ci[1])}) includes zero. More plays will tell.`}</p>`
+        : `<p>Play Speed Sprint on days you have sleep data. We need 3 plays after 7–9 h nights and 3 after other nights (you have ${P.n_good} and ${P.n_other}). Your first 3 plays don't count, because everyone improves fast at first just from practice.</p>`}
+      <a class="btn" href="#/sprint">⚡ Play Speed Sprint</a></section>
+
+    <section class="card"><div class="eyebrow">Week by week</div><h2>Your habits and your game</h2>
+      <div class="grid"><div><h3>👟 Steps and 🌙 sleep regularity</h3><div class="chartbox"><canvas id="wkHab"></canvas></div></div>
+      <div><h3>⚡ Speed Sprint (weekly average)</h3><div class="chartbox"><canvas id="wkGame"></canvas></div></div></div></section>
+
+    ${W.signals.length ? `<section class="card"><div class="eyebrow">More from your watch</div><h2>Extra brain-health signals</h2><div class="grid3">
+      ${W.signals.map(g => `<div class="signal"><h3>${esc(g.title)}</h3><div class="bignum sm">${g.unit === 'm/s' ? g.now.toFixed(2) : Math.round(g.now)}<small> ${g.unit}</small></div>
+        ${g.change != null ? `<p class="${(g.change > 0) === (g.better === 'higher') ? 'up' : 'down'}">${g.change > 0 ? '▲' : '▼'} ${g.unit === 'm/s' ? Math.abs(g.change).toFixed(2) : Math.abs(g.change).toFixed(1)} ${g.unit} vs the 4 weeks before</p>` : '<p class="muted">Trend needs 4 more weeks.</p>'}
+        <p>${esc(g.why || '')}</p><p class="muted">${g.url ? `<a href="${g.url}" target="_blank" rel="noopener">${esc(g.cite)}</a>` : esc(g.cite)}. ${esc(g.watch)}</p></div>`).join('')}</div></section>` : ''}
+
+    <section class="card"><div class="eyebrow">Take it with you</div><h2>🩺 Doctor visit summary</h2><p>One printable page: blood pressure log, mood check, your watch trends and your game trend, plus what's still unknown.</p><a class="btn" href="#/doctor">Open summary →</a></section>
+    <p class="muted">What this can't tell you: these are links seen in one-time surveys, not proof that changing a habit changes your brain, and not a dementia risk score. Your own trend is the most personal part, and it gets clearer the more you play.</p>
+  </div>`;
+  const wk = W.weekly, lab = wk.map(w => w.week_end.slice(5));
+  chart('wkHab', { type: 'bar', data: { labels: lab, datasets: [
+    { type: 'bar', label: 'steps a day', data: wk.map(w => w.steps), backgroundColor: 'rgba(91,227,164,.7)', borderRadius: 6, yAxisID: 'y' },
+    { type: 'line', label: 'sleep regularity', data: wk.map(w => w.sri), borderColor: '#A994FF', backgroundColor: '#A994FF', tension: .3, yAxisID: 'y2', spanGaps: true }] },
+    options: chartOpts({ scales: { x: chartOpts().scales.x, y: { ...chartOpts().scales.y, beginAtZero: true }, y2: { position: 'right', min: 0, max: 100, ticks: { color: '#C3CAEA' }, grid: { display: false } } } }) });
+  chart('wkGame', { type: 'line', data: { labels: lab, datasets: [{ label: 'Speed Sprint', data: wk.map(w => w.sprint), borderColor: '#6BE7F5', backgroundColor: '#6BE7F533', fill: true, tension: .3, spanGaps: true }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
+}
+
+// ================================================================== DOCTOR SUMMARY (printable)
+async function pageDoctor() {
+  const [W, P] = await Promise.all([api('/api/me/brainweek'), api('/api/me/progress?days=90')]);
+  const pr = ME.profile, bp = P.bp.filter(b => b.value != null), sp = P.speed;
+  const unknown = [pr.sbp == null && 'blood pressure (no reading yet)', pr.phq9 == null && 'mood check (PHQ-8 not taken)', 'HbA1c / cholesterol (not entered)', pr.hearing_trouble && 'hearing (trouble reported; hearing test?)'].filter(Boolean);
+  const first3 = sp.slice(3), avg = a => a.length ? (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1) : '–';
+  main.innerHTML = `<div class="stack doctor">
+    <div class="row noprint"><button class="btn" onclick="print()">🖨 Print or save as PDF</button><a class="ghost btn" href="#/week">← Back</a></div>
+    ${isSample() ? SAMPLE_NOTE : ''}
+    <section class="card"><h1>NeuroTrail visit summary</h1><p><b>${esc(AUTH.name)}</b> · age ${pr.age ?? '–'} · printed ${new Date().toISOString().slice(0, 10)}</p>
+      <p class="muted">Self-tracked wellness data, not a medical record or diagnosis.</p></section>
+    <section class="card"><h2>Blood pressure (home readings)</h2>${bp.length ? `<table class="t"><tr><th>Date</th><th>Top number (mmHg)</th></tr>${bp.slice(-10).map(b => `<tr><td>${b.date}</td><td>${Math.round(b.value)}</td></tr>`).join('')}</table>` : '<p>No readings logged.</p>'}
+      <p class="muted">Method shown in app: seated, 5 min rest, arm at heart level, 2 readings 1 min apart (AHA).</p></section>
+    <section class="card"><h2>Mood</h2><p>${pr.phq9 != null ? `PHQ-8 score: <b>${pr.phq9}</b> of 24${pr.phq9 >= 10 ? ' (10 or more: worth discussing)' : ''}` : 'PHQ-8 not taken.'}</p></section>
+    ${W.has_data ? `<section class="card"><h2>Watch data (last ${W.window.days} days: ${W.window.from} to ${W.window.to})</h2><table class="t">
+      <tr><td>Steps a day</td><td>${W.items[1].value != null ? Math.round(W.items[1].value).toLocaleString() : '–'}</td></tr>
+      <tr><td>Sleep a night</td><td>${W.items[2].value != null ? W.items[2].value.toFixed(1) + ' h' : '–'}</td></tr>
+      <tr><td>Sleep regularity (hourly SRI, 0–100)</td><td>${W.items[0].value != null ? W.items[0].value.toFixed(0) : '–'}</td></tr>
+      ${W.signals.map(g => `<tr><td>${esc(g.title)}</td><td>${g.now} ${g.unit}${g.change != null ? ` (${fmt(g.change, 2)} vs prior 4 weeks)` : ''}</td></tr>`).join('')}</table></section>` : ''}
+    <section class="card"><h2>Speed Sprint (digit-symbol style, 90 s)</h2><p>${sp.length} plays. Average of plays 4+: <b>${avg(first3.map(r => r.correct))}</b>${first3.length >= 6 ? `; first half ${avg(first3.slice(0, first3.length >> 1).map(r => r.correct))} → second half ${avg(first3.slice(first3.length >> 1).map(r => r.correct))}` : ''}.</p>
+      <p class="muted">Compared only with this person's own earlier plays. Not a validated clinical test. A steady decline over 3+ months is worth discussing.</p></section>
+    <section class="card"><h2>Still unknown</h2><ul class="plain">${unknown.map(u => `<li>${esc(u)}</li>`).join('') || '<li>Nothing flagged.</li>'}</ul></section>
+  </div>`;
 }
 
 // ================================================================== BOOT

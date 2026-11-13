@@ -222,7 +222,7 @@ def test_apple_health_parse_dedupes_sources_and_ignores_in_bed():
     assert d["steps"] == 3500 and d["sleep_hours"] == 7.0
 
 
-def test_watch_sleep_is_display_only():
+def test_watch_sleep_does_not_override_survey_answer():
     p = Player.create("W")
     p.sleep_hours = 7.0
     p.save()
@@ -261,3 +261,48 @@ def test_mri_samples_do_not_expose_cnn_brain_age():
     c = _client()
     rows = c.get("/api/mri/samples").json()
     assert rows and all("brain_age" not in r for r in rows)
+
+
+# ---------------------------------------------------------------- Your week, your brain (watch data)
+def test_rhythm_features_behave():
+    from neurotrail import rhythm
+    hour = np.tile(np.arange(24), 7)
+    same = np.tile([1] * 7 + [0] * 17, 7).astype(float)              # asleep 0-7h every day
+    assert rhythm.sleep_regularity(same) == 100
+    rng = np.random.default_rng(0)
+    assert rhythm.sleep_regularity(rng.integers(0, 2, 24 * 7).astype(float)) < 40
+    act = np.tile(np.r_[np.zeros(7), np.full(17, 100.0)], 7) + rng.normal(0, 1, 24 * 7)
+    assert rhythm.interdaily_stability(act, hour) > .95                # same pattern every day
+    assert rhythm.interdaily_stability(rng.normal(0, 1, 24 * 7), hour) < .3
+    assert 2 < rhythm.sleep_midpoint(same, hour) < 5
+
+
+def test_csv_bedtime_waketime_become_hourly_sleep():
+    from neurotrail import wearables
+    days = wearables.parse_csv("date,steps,bedtime,waketime\n2026-11-01,5000,23:00,07:00\n2026-11-02,6000,23:30,07:00\n")
+    assert days["2026-11-01"]["sleep_hours"] == 8.0
+    assert days["2026-11-01"]["asleep_h"][:7] == [1] * 7 and days["2026-11-01"]["asleep_h"][12] == 0
+    assert days["2026-10-31"]["asleep_h"][23] == 1                      # the evening before
+
+
+def test_device_findings_are_real_and_honest():
+    import json
+    a = json.loads((ROOT / "models" / "artifacts" / "device_associations.json").read_text())
+    assert a["n_device"] > 2000
+    sri = a["features"]["sri"]
+    assert sri["alone"]["p_holm"] < .05 and sri["health_adjusted"]["ci"][0] > 0
+    assert a["features"]["rhr"]["health_adjusted"]["p"] > .05          # tested, no clear link: shown as such
+
+
+def test_sample_account_brainweek_and_watch_autofill():
+    c = _client()
+    name = c.post("/auth/sample").json()["name"]
+    assert name.startswith("Sample")                                    # labelled as sample in the app
+    W = c.get("/api/me/brainweek").json()
+    assert W["has_data"] and [i["id"] for i in W["items"]] == ["sri", "steps", "sleep_len"]
+    assert "your_points" not in W["items"][1]                           # no personal points across device units
+    assert W["personal"]["status"] in ("ok", "learning") and len(W["weekly"]) >= 6
+    assert {s["id"] for s in W["signals"]} == {"walking_speed", "hrv_ms", "resting_hr"}
+    today = date.today().isoformat()
+    r = c.post("/api/me/wearables", files={"file": ("w.csv", f"date,steps,sleep_hours\n{today},8123,7.5\n", "text/csv")}).json()
+    assert set(r["autofilled"]) <= {"steps", "sleep"}

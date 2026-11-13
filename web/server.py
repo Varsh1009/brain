@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from neurotrail import auth, coach, db, diseases, games as gym, regions as RG, scoring, tissue, voice as vox, wearables  # noqa: E402
+from neurotrail import auth, brainweek, coach, db, diseases, games as gym, regions as RG, scoring, tissue, voice as vox, wearables  # noqa: E402
 from neurotrail.quests import LANCET_CITE, QUEST_BY_ID, QUESTS, TIER_BONUS  # noqa: E402
 from neurotrail.state import Player, today  # noqa: E402
 
@@ -184,6 +184,22 @@ def auth_guest(body: NewPlayer | None = None) -> JSONResponse:
     p = Player.create(name)
     p.guest = True
     p.save()
+    return _set_cookie(JSONResponse({"name": name}), auth.new_session(name, "guest"))
+
+
+@app.post("/auth/sample")
+def auth_sample() -> JSONResponse:
+    """A fresh sample account with 60 days of synthetic watch data (labelled in the app)."""
+    from neurotrail import demo
+    name = f"Sample-{_secrets.token_hex(2)}"
+    p = Player.create(name)
+    p.guest = True
+    for k, v in {"age": 67, "female": True, "sleep_hours": 6.5, "diabetes": False, "current_smoker": False,
+                 "hearing_trouble": True, "feel_down": False}.items():
+        setattr(p, k, v)
+    p.onboarded = True
+    p.save()
+    demo.seed_player(name)
     return _set_cookie(JSONResponse({"name": name}), auth.new_session(name, "guest"))
 
 
@@ -666,7 +682,26 @@ async def wearables_upload(name: str, file: UploadFile = File(...)) -> dict:
     if not days:
         raise HTTPException(422, "No steps, sleep or heart data found in that file.")
     n = db.put_days(p.name, days, file.filename)
-    return wearables_get(name) | {"imported_days": n}
+    auto = autofill(p)
+    return wearables_get(name) | {"imported_days": n, "autofilled": auto}
+
+
+def autofill(p) -> list[str]:
+    """Tick today's steps / sleep habits from watch data, so nobody types numbers the watch knows."""
+    d = db.days(p.name).get(today(), {})
+    done = []
+    if "steps" in d and "steps" in QUEST_BY_ID and p.complete("steps", float(d["steps"]), {"source": "watch"}):
+        done.append("steps")
+    if "sleep_hours" in d and "sleep" in QUEST_BY_ID and p.complete("sleep", float(d["sleep_hours"]), {"source": "watch"}):
+        done.append("sleep")
+    return done
+
+
+@app.get("/api/player/{name}/brainweek")
+def brain_week(name: str) -> dict:
+    """Your week, your brain: watch data -> NHANES device findings -> your own Sprint trend."""
+    p = get(name)
+    return brainweek.build(db.days(p.name), db.rounds(p.name), getattr(p, "age", None))
 
 
 @app.get("/api/player/{name}/wearables")
